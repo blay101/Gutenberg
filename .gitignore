@@ -1,0 +1,4 @@
+*.epub
+*.html
+/.venv
+test.py
