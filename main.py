@@ -2,19 +2,41 @@ import requests
 from urllib import request
 import webbrowser
 from pathlib import Path
+from operator import itemgetter
+import os
 
-class Database:
-    def __init__(self, books, current_page, previous_page, next_page):
-        self.books = books
-        self.current_page = current_page
-        self.previous_page = previous_page
-        self.next_page = next_page
+class Book:
+    def __init__(self, title: str, id: int, authors, summary, subjects, epub_link: str, html_link: str):
+        self.title = title
+        self.id = id
+        self.authors = authors
+        self.summary = summary
+        self.subjects = subjects
+        self.epub_link = epub_link
+        self.html_link = html_link
 
-    def show_books(self):
-        n = 1
-        for idx in self.books:
-                print(f'{n}: {idx['title']}')
-                n += 1
+    def get_title(self):
+        return self.title
+
+    def get_id(self):
+        pass
+
+    def get_authors(self):
+        return self.authors[0].get('name')
+
+    def get_summary(self):
+        return self.summary[0]
+
+    def get_subjects(self):
+        return self.subjects
+
+    def get_epub_link(self):
+        return self.epub_link
+
+    def get_html_link(self):
+        return self.html_link
+
+        
 
 def fetch_url(url):
     response = requests.get(url)
@@ -22,31 +44,42 @@ def fetch_url(url):
 
 INITIAL_URL = 'https://gutendex.com/books'
 
-def download_epub(book_data):
-    book_url = book_data['formats']['application/epub+zip']
-    epub_location = Path(f'./{book_data['title']}')
-    if not epub_location.exists():
-        request.urlretrieve(book_url, f'{epub_location}.epub')
+def download_epub(book: Book) -> None:
+    print(f'Downloading {book.get_title()}.....')
+    book_url = book.get_epub_link()
+    epub_directory = Path(f'./epubs/{book.get_title()}.epub')
+    if not epub_directory.exists():
+        request.urlretrieve(book_url, f'{epub_directory}')
+        print('Download finished')
         return
     else:
-        print(f'{epub_location} already exist at selected location\n')
+        print(f'{book.get_title()}.epub already exist at selected location\n')
         return
 
-def read_online(book_data):
-    text_url = book_data['formats']['text/html']
+def read_online(book: Book) -> None:
+    print(f'Opening {book.get_title()} in browser...')
+    text_url = book.get_html_link()
     #text = request.urlretrieve(text_url, './text')
     webbrowser.open(text_url)
 
+def get_books(response) -> list[Book]:
+    books_data = response['results']
+    books = []
+    for book in books_data:
+        book_title = book['title']
+        book_id = book['id']
+        book_authors = book['authors']
+        book_summary = book['summaries']
+        book_subjects = book['subjects']
+        book_epub_link = book['formats']['application/epub+zip']
+        book_html_link = book['formats']['text/html']
+        data = Book(book_title, book_id, book_authors, book_summary, 
+                    book_subjects, book_epub_link, book_html_link)
+        books.append(data)
+    
+    return books
 
-def get_database(response):
-
-    books = response['results']
-    next_page = response['next']
-    previous_page = response['previous']
-    data = Database(books, INITIAL_URL, previous_page, next_page)
-    return data
-
-def page_changer(k):
+def page_changer(k) -> str:
     n = k
     print(f'Showing menu for page {n}')
 
@@ -57,17 +90,18 @@ def page_changer(k):
 
     return current_url
 
-def get_book(database: Database):   
+def get_book(books: list[Book]) -> Book | None:   
     required_book = []
     while True:
-        print("\ntype 'quit' to exit and s to show current books on page")
+        print("\nPress 's' to show books on current page")
+        print("Press 'q' to go back to main menu")
         title = input('enter title of book: ').lower()
-        if title == 'quit': break
+        if title == 'q': break
         if title == 's': 
-            database.show_books()
+            for book in books: print(book.get_title())
             continue
-        for book in database.books:
-            if title in book['title'].lower() or any(title in author.get('name', '').lower() for author in book['authors']):
+        for book in books:
+            if title in book.get_title().lower() or any(title in a.get('name', '').lower() for a in book.authors):
                 required_book.append(book)
         if len(required_book) == 0:
             print(f'\n{title} not found in books catalogue')
@@ -75,36 +109,84 @@ def get_book(database: Database):
             continue
         else:
             print(f'\nPossible suggestions for {title}..\n')
-            for index, name in enumerate(required_book):
-                print(f'{index + 1}: {name['title']}\n')
-            return name
+            for index, book in enumerate(required_book):
+                print(f'{index + 1}: {book.get_title()} by {book.get_authors()}')
+            try:
+                while True:
+                    choice = int(input('Make your selection '))
+                    
+                    try:
+                        selected = required_book[choice - 1]
+                        print(f'\n{selected.get_title()} selected....')
+                        return selected
+                    except IndexError:
+                        print('\nInvalid selection, please try again')
+                        continue
 
-def reading_mode(book_data):
+            except ValueError:
+                print('\nPlease enter a number')
+                return
+
+def reading_mode(book: Book) -> None:
     while True:
-        print('1. Read online\n2. Download epub\n3. Back to Main menu')
-        choice = int(input('Select your preferred mode '))
-        if choice == 1:
-            read_online(book_data)
-            break
-        elif choice == 2:
-            download_epub(book_data)
-            break
-        elif choice == 3:
-            return
-        else:
-            print('\nInvalid selection')
-            continue
+        print('1. Read online\n2. Download epub\n3. See book summary')
+        print('4. see book subjects')
+        print('5. Back to main menu')
+        try:
+            choice = int(input('Select your preferred mode '))
+            if choice == 1:
+                read_online(book)
+                break
+            elif choice == 2:
+                download_epub(book)
+                break
+            elif choice == 3:
+                show_summary(book)
+                continue
+            elif choice == 4:
+                show_subjects(book)
+                continue
+            elif choice == 5:
+                return
+            else:
+                print('\nInvalid selection')
+                continue
 
-def intitialize():
+        except ValueError:
+            print('Please enter a number')
+            continue
+        
+def show_summary(book: Book) -> None:
+    summary = book.get_summary()
+    if summary == '':
+        print('No available summary to display')
+        return
+    print('\nBook sumary\n------------------------------------------')
+    print(f'{summary}')
+
+def show_subjects(book: Book) -> None:
+    subjects = book.get_subjects()
+    if len(subjects) == 0:
+        print('No available subjects')
+        return
+    print('\nBook subjects\n----------------------------------------')
+    for subject in subjects:
+        print(subject)
+
+def intitialize() -> int | None:
     print('\n1. Show books on current page')
     print('2. Search for books')
     print('3. change page')
     print('4. Exit')
-    operation = int(input('\nChoose an operation '))
+    try:
+        operation = int(input('\nChoose an operation '))
+    except ValueError:
+        print("Invalid selection. Please try again")
+        return
 
     return operation
 
-def page_information(n):
+def page_information(n) -> tuple:
     inside_active = True
     k = 0
     k += n
@@ -123,7 +205,7 @@ def page_information(n):
             if n < 1: n = 1
             if k == 1 or n == 1:
                 print(f'Now on page {n}\nThis is the initial page')
-            print('switching to previous page....')
+            if k != 1 or n !=1 : print('switching to previous page....')
             print(f'Now on page {n}')
             continue
         elif option == 's':
@@ -141,24 +223,26 @@ def page_information(n):
 def main():
     print( '=============================================================')
     print( '             My Gutenberg Database v0.1.0                    ')
-    print(  '             Created by Nathaniel Blay                      ')
+    print(  '          Created by Nathaniel Blay(Amadeus)                ')
     print(' =============================================================')
 
-    #url = traverse_page(1)
     response = fetch_url(INITIAL_URL)
-    database_information = get_database(response)
+    books_list = get_books(response)
+    
     active = True
     n = 1
     while active:
         operation = intitialize()
 
         if operation == 1:
-            database_information.show_books()
-            continue
+            for book in books_list:
+                print(book.get_title())
+                continue
         elif operation == 2:
-            book = get_book(database_information)
-            reading_mode(book)
-            continue
+            book = get_book(books_list)
+            if book:
+                reading_mode(book)
+                continue
         elif operation == 4:
             active = False
             break
@@ -166,10 +250,13 @@ def main():
             n, k = page_information(n)
             url = page_changer(k)
             response = fetch_url(url)
-            database_information = get_database(response)
-            continue
+            books_list = get_books(response)
+            book = get_book(books_list)
+            if book:
+                reading_mode(book)
+                continue
         else:
-            print('Invalid selection. Please try again!')
+            print('Please choose a number from the menu!')
             continue
 
     print('\nThanks for stopping by...\nHappy reading :) .')   
@@ -177,38 +264,3 @@ def main():
 if __name__ == '__main__':
     main()
 
-    
-
-# def traverse_page(k):
-#     print('Press "n" to move to the next page')
-#     print('Press "p" to move to the previous page')
-#     print('Press "s" to stay on current Page')
-#     print('press "h" to go to home page\n')
-#     choice = input("Make your selection ")
-
-#     n = k
-#     match choice:
-#         case 'n':
-#             print('Switching to next page...\n')
-#             n += 1
-#         case 'p':
-#             print('Switching to previous page...\n')
-#             n -= 1
-#             if n < 1: n = 1
-#             print('This is the homepage')
-#             print('Staying on page')
-#         case 's':
-#             n += 0
-#         case 'h':
-#             n = 1
-#         case _:
-#             print('invalid response\n')
-#             print('Defaulting to current page\n')
-#             n += 0
-
-#     if n == 1:
-#         current_url = 'https://gutendex.com/books'
-#     else:
-#         current_url = f'https://gutendex.com/books/?page={n}'
-
-#     return current_url
