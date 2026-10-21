@@ -66,17 +66,20 @@ def get_books(response) -> list[Book]:
     books_data = response['results']
     books = []
     for book in books_data:
-        book_title = book['title']
-        book_id = book['id']
-        book_authors = book['authors']
-        book_summary = book['summaries']
-        book_subjects = book['subjects']
-        book_epub_link = book['formats']['application/epub+zip']
-        book_html_link = book['formats']['text/html']
-        data = Book(book_title, book_id, book_authors, book_summary, 
-                    book_subjects, book_epub_link, book_html_link)
-        books.append(data)
-    
+        try:
+            book_title = book['title']
+            book_id = book['id']
+            book_authors = book['authors']
+            book_summary = book['summaries']
+            book_subjects = book['subjects']
+            book_epub_link = book['formats']['application/epub+zip']
+            book_html_link = book['formats']['text/html']
+            data = Book(book_title, book_id, book_authors, book_summary, 
+                        book_subjects, book_epub_link, book_html_link)
+            books.append(data)
+        except KeyError:
+            continue
+               
     return books
 
 def page_changer(k) -> str:
